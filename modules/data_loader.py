@@ -30,18 +30,28 @@ def load_data(file_path: str) -> pd.DataFrame:
             parse_dates=['DW_CREATION_TIMESTAMP', 'DW_UPDATED_TIMESTAMP'],
             date_parser=lambda x: pd.to_datetime(x, format='%Y-%m-%d %H:%M:%S.%f Z', utc=True)
         )
+        
+        # Convert WEEK to numeric
+        df['WEEK_NUM'] = pd.to_numeric(
+            df['WEEK'].str.extract('(\d+)')[0], 
+            errors='coerce'
+        ).dropna().astype(int)
+        
         validated_df = WoundDataSchema.validate(df)
         
+        # Create ordered categorical week
         validated_df['WEEK'] = pd.Categorical(
             validated_df['WEEK'],
-            categories=sorted(validated_df['WEEK'].unique(), key=lambda x: int(x.split()[-1])),
+            categories=sorted(validated_df['WEEK'].unique(), 
+                            key=lambda x: int(x.split()[-1])),
             ordered=True
         )
         
         return validated_df
+
     except pa.errors.SchemaError as e:
         raise ValueError(f"Data validation failed: {str(e)}") from e
     except pd.errors.ParserError as e:
         raise ValueError(f"Date parsing error: {str(e)}") from e
     except Exception as e:
-        raise ValueError(f"An unexpected error occurred: {str(e)}") from e
+        raise ValueError(f"Unexpected error: {str(e)}") from e

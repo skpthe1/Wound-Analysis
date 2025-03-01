@@ -1,59 +1,83 @@
 from crewai import Task
+from typing import Dict, Any, List
+import pandas as pd
+from modules.analysis import summarize_data, summarize_analysis
+import json
+from crewai import Agent
 
-def create_analysis_task(data_analysis_agent, data):
+def create_analysis_task(agent: Agent, data: pd.DataFrame) -> Task:
+    """Create a task for analyzing wound care data."""
+    summary = summarize_data(data)
     return Task(
-        description=f"""
-        Analyze the following wound care product sales data: {data}. Your analysis must be very detailed and comprehensive.
+        description=f"""Analyze the following wound care dataset and provide the results in json format:
 
-        Specifically:
+{summary}
 
-        1.  Identify key weekly sales trends, noting any significant increases or decreases in sales volume. Present this as a percentage change.
-        2.  Assess the performance of each wound healing product in the dataset. Determine which products are consistently top performers and which are underperforming.
-        3.  Extract key statistics, such as:
-            *   Total sales for each product
-            *   Average weekly sales
-            *   Maximum and minimum weekly sales
-        4.  Identify any correlations between product sales and specific weeks or time periods. Are there any seasonal trends or patterns?
-        5.  Provide a summary of the most significant insights from your analysis, highlighting the most important trends and patterns in the data.
+Include the following in the json output:
+1. Weekly trends with visualizations.
+2. Top-performing products by average wound area.
+3. Correlation matrix between numerical variables.
 
-        Present your findings in a clear and concise manner, suitable for use in generating hypotheses.
-        """,
-        agent=data_analysis_agent,
+Note: Ensure the response is a valid json object, and keep it as concise as possible to avoid length limits. Do not use Chain of thought. Do not add any extra text or explanations. Be as brief as humanly possible. Make sure to return a valid JSON object. This is not the last task, there are more steps after this.""",
+        agent=agent,
+        expected_output="A json object with weekly trends, product performance, and correlation matrix.",
+        output_json=True,
+        max_iter=20,  # Increased iteration limit
+        max_rpm=15000,  # Increased RPM
     )
 
-
-def create_hypothesis_task(hypothesis_agent, analysis_results):
+def create_hypothesis_task(agent: Agent, analysis_results: Dict[str, Any]) -> Task:
+    """Create a task for generating hypotheses based on analysis results."""
+    summary = summarize_analysis(analysis_results)
+    truncated_summary = summary[:250] + "..." if len(summary) > 250 else summary  # Reduced the size to be sure
     return Task(
-        description=f"""
-        Based on the following analysis results: {analysis_results}, generate a set of hypotheses that could explain the observed trends and patterns in wound care product sales. Your hypotheses should be creative, insightful, and testable.
+        description=f"""Using this summary:
 
-        Consider the following:
+{truncated_summary}
 
-        1.  What potential factors could be driving the observed weekly sales trends?
-        2.  What could be causing some products to outperform others?
-        3.  Are there any external factors (e.g., market conditions, competitor activities) that might be influencing sales?
-        4.  Can you suggest any actionable strategies for improving sales or product performance based on your hypotheses?
-        5.  Come up with at least 3 distinct hypotheses.
+Generate exactly 2 hypotheses based on the patterns in the summary. Each hypothesis must be one sentence.
 
-        Each hypothesis should be clearly stated and include a brief rationale for why you believe it to be plausible.
-        """,
-        agent=hypothesis_agent,
+Return the two hypotheses as a string, separated by a new line.
+
+Make sure to only provide the hypotheses. Do not add any other text.
+Do not use chain of thought. Provide directly the result. This is not the last task, there are more steps after this.""",
+        agent=agent,
+        expected_output="Two hypotheses as a string, separated by a new line.",
+        output_json=False,
+        max_iter=20,  # Increased iteration limit
+        max_rpm=15000,  # Increased RPM
     )
 
+def create_validation_task(agent: Agent, hypotheses: List[str]) -> Task:
+    """Create a task for validating hypotheses."""
+    hypotheses_str = "\n".join([f"- {h}" for h in hypotheses])
 
-def create_validation_task(validation_agent, hypotheses):
     return Task(
-        description=f"""
-        Validate the following hypotheses: {hypotheses}. For each hypothesis, assess its validity based on available data and provide a confidence score (out of 100) that reflects your level of certainty.
+        description=f"""Validate the following hypotheses:
 
-        Consider the following:
+{hypotheses_str}
 
-        1.  Is there any direct evidence in the data to support or refute the hypothesis?
-        2.  Are there any potential confounding factors that could be influencing the results?
-        3.  What are the limitations of the data, and how might these limitations affect the validity of the hypotheses?
-        4.  Are there any additional data sources or analyses that could be used to further validate the hypotheses?
+For each hypothesis, provide a concise validation in the following format:
+- Status: supported/unsupported/inconclusive
+- Evidence: [a single, very short sentence]
 
-        Provide a detailed explanation for your confidence score, including a summary of the evidence you considered and any caveats or limitations.
-        """,
-        agent=validation_agent,
+Separate the validations for each hypothesis with a blank line.
+
+Do not include any extra text or explanations. Be as brief as possible.
+Do not use chain of thought. Provide directly the result.
+Make sure to provide the status and the evidence in lowercase.
+
+Example:
+- Status: supported
+- Evidence: data shows consistent trends
+
+- Status: inconclusive
+- Evidence: insufficient data for confirmation
+
+This is the last task; make sure to give the final output.""",
+        agent=agent,
+        expected_output="Validation results for each hypothesis in plain text, with status and evidence.",
+        output_json=False,
+        max_iter=20,  # Increased iteration limit
+        max_rpm=15000,  # Increased RPM
     )

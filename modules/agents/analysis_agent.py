@@ -1,17 +1,18 @@
-from langchain_openai import AzureChatOpenAI
 from crewai import Agent
+from langchain_openai import AzureChatOpenAI
 
-
-def create_analysis_agent(api_key, azure_endpoint, deployment_name, api_version ):
+def create_analysis_agent(api_key, azure_endpoint, deployment_name, api_version):
     return Agent(
-        role="Data Analyst",
-        goal="Analyze wound data trends and identify key insights.",
-        backstory="A data analyst with expertise in healthcare, specializing in wound care products and sales data.",
+        role="Clinical Data Analyst",
+        goal="Analyze wound healing trends and product performance",
+        backstory="Expert in statistical analysis of medical data with 10+ years experience in wound care",
         verbose=True,
-        llm=AzureChatOpenAI(        
+        llm=AzureChatOpenAI(
             api_key=api_key,
-            openai_api_version=api_version,  # Replace with your API version
-            azure_deployment=deployment_name,
             azure_endpoint=azure_endpoint,
+            api_version=api_version,
+            azure_deployment=deployment_name,
+            model_kwargs={"response_format": {"type": "json_object"}}
         ),
+        memory=True
     )
