@@ -19,12 +19,11 @@ from modules.tasks import (
 from crewai import Crew
 from plotly.io import from_json
 from modules.validation import Hypothesis, ValidationResult
+import traceback
 
-# Load environment variables
 load_dotenv()
 
 def parse_hypothesis_output(output):
-    """Extract hypotheses from the agent's raw string response."""
     try:
         if isinstance(output, str):
             text = output.strip()
@@ -32,20 +31,15 @@ def parse_hypothesis_output(output):
             text = output.raw.strip()
         else:
             raise ValueError("Unexpected output format from agent")
-        
         sentences = re.split(r'(?<!\w\.\w.)(?<![A-Z][a-z]\.)(?<=\.|\?)\s', text)
         sentences = [s for s in sentences if s]
-
         if len(sentences) < 2:
             raise ValueError(f"Expected at least 2 hypotheses, but found only {len(sentences)}. Raw output: {output}")
-        
         return [Hypothesis(statement=sentences[0]), Hypothesis(statement=sentences[1])]
-    
     except ValueError as e:
         raise ValueError(f"Error parsing hypotheses: {e}")
 
 def parse_validation_output(output):
-    """Extract validation results from the agent's raw string response."""
     try:
         if isinstance(output, str):
             text = output.strip()
@@ -53,34 +47,24 @@ def parse_validation_output(output):
             text = output.raw.strip()
         else:
             raise ValueError("Unexpected output format from agent")
-        
-        # Split the text into blocks for each hypothesis validation
         blocks = re.split(r'\n\s*\n', text)
         validations = []
-        
         for block in blocks:
             lines = block.strip().split('\n')
             if len(lines) >= 2:
                 status_line = lines[0].strip()
                 evidence_line = lines[1].strip()
-                
                 if status_line.startswith('- Status:') and evidence_line.startswith('- Evidence:'):
                     status = status_line.split(':')[1].strip()
                     evidence = evidence_line.split(':')[1].strip()
-                    validations.append({
-                        "status": status,
-                        "evidence": evidence
-                    })
+                    validations.append({"status": status, "evidence": evidence})
                 else:
                     raise ValueError(f"Invalid format in validation block: {block}")
             else:
                 raise ValueError(f"Insufficient lines in validation block: {block}")
-        
         if len(validations) != 2:
             raise ValueError(f"Expected 2 validations, but found {len(validations)}. Raw output: {output}")
-        
         return validations
-    
     except ValueError as e:
         raise ValueError(f"Error parsing validation results: {e}")
 
@@ -91,14 +75,11 @@ def main():
 
     if uploaded_file:
         try:
-            # Load and validate data
             df = load_data(uploaded_file)
             st.session_state.data = df
-
             st.success("✅ Data loaded successfully!")
             st.write(summarize_data(df))
 
-            # Initialize agents
             api_key = os.getenv("AZURE_OPENAI_API_KEY")
             endpoint = os.getenv("AZURE_ENDPOINT")
             deployment_name = os.getenv("AZURE_DEPLOYMENT_NAME")
@@ -108,29 +89,29 @@ def main():
             hypothesis_agent = create_hypothesis_agent(api_key, endpoint, deployment_name, api_version)
             validation_agent = create_validation_agent(api_key, endpoint, deployment_name, api_version)
 
-            # Analysis workflow
             if st.button("🔍 Analyze Data"):
                 with st.spinner("Analyzing data..."):
-                    analysis_results = analyze_trends(df)
-                    st.session_state.analysis_results = analysis_results
+                    try:
+                        analysis_results = analyze_trends(df)
+                        st.session_state.analysis_results = analysis_results
 
-                    st.subheader("Analysis Summary")
-                    st.write(summarize_analysis(analysis_results))
+                        st.subheader("Analysis Summary")
+                        st.write(summarize_analysis(analysis_results))
 
-                    st.subheader("Weekly Trends")
-                    weekly_fig = from_json(analysis_results['weekly_trends'])
-                    st.plotly_chart(weekly_fig)
+                        st.subheader("Weekly Trends")
+                        weekly_fig = from_json(analysis_results['weekly_trends'])
+                        st.plotly_chart(weekly_fig)
 
-                    st.subheader("Product Performance")
-                    product_fig = from_json(analysis_results['product_performance'])
-                    st.plotly_chart(product_fig)
+                        st.subheader("Product Performance")
+                        product_fig = from_json(analysis_results['product_performance'])
+                        st.plotly_chart(product_fig)
+                    except Exception as e:
+                        st.error(f"🚨 Analysis failed: {str(e)}\n\nStack trace:\n{traceback.format_exc()}")
 
-            # Hypothesis generation workflow
             if "analysis_results" in st.session_state and st.button("💡 Generate Hypotheses"):
                 with st.spinner("Generating hypotheses..."):
                     task = create_hypothesis_task(hypothesis_agent, st.session_state.analysis_results)
                     crew = Crew(agents=[hypothesis_agent], tasks=[task], verbose=True, max_iter=20)
-
                     result = crew.kickoff()
                     if result:
                         try:
@@ -145,12 +126,10 @@ def main():
                         except Exception as e:
                             st.error(f"Error processing hypotheses: {str(e)}. Raw output: {result}")
 
-            # Validation workflow
             if "hypotheses" in st.session_state and st.button("✅ Validate Hypotheses"):
                 with st.spinner("Validating hypotheses..."):
                     task = create_validation_task(validation_agent, [h.statement for h in st.session_state.hypotheses])
                     crew = Crew(agents=[validation_agent], tasks=[task], verbose=True, max_iter=20)
-
                     result = crew.kickoff()
                     if result:
                         try:
@@ -160,7 +139,6 @@ def main():
                                 validation_results = parse_validation_output(result.raw)
                             else:
                                 raise ValueError(f"Unexpected result format: {type(result)}")
-                            
                             st.subheader("Validation Results")
                             for i, (hypothesis, validation) in enumerate(zip(st.session_state.hypotheses, validation_results), 1):
                                 st.write(f"**Validation {i}**")
@@ -173,7 +151,7 @@ def main():
                             st.error(f"Error processing validation: {str(e)}. Raw output: {result}")
 
         except Exception as e:
-            st.error(f"🚨 An error occurred: {str(e)}")
+            st.error(f"🚨 An error occurred: {str(e)}\n\nStack trace:\n{traceback.format_exc()}")
 
 if __name__ == "__main__":
     main()
